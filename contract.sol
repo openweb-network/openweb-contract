@@ -56,13 +56,13 @@ contract DateTime {
     
     function isLeapYear(uint year) internal pure returns (bool) {
         if (year % 4 != 0) {
-                return false;
+            return false;
         }
         if (year % 100 != 0) {
-                return true;
+            return true;
         }
         if (year % 400 != 0) {
-                return false;
+            return false;
         }
         return true;
     }
@@ -73,16 +73,16 @@ contract DateTime {
         }
         
         if (month == 1 || month == 3 || month == 5 || month == 7 || month == 8 || month == 10 || month == 12) {
-                return 31;
+            return 31;
         }
         else if (month == 4 || month == 6 || month == 9 || month == 11) {
-                return 30;
+            return 30;
         }
         else if (isLeapYear(year)) {
-                return 29;
+            return 29;
         }
         else {
-                return 28;
+            return 28;
         }
     }
     
@@ -96,7 +96,8 @@ contract DateTime {
         uint toDay;
         (fromYear, fromMonth, fromDay) = _timestampToDate(fromTimestamp);
         (toYear, toMonth, toDay) = _timestampToDate(toTimestamp);
-        _months = toYear * 12 + toMonth - fromYear * 12 - fromMonth;
+        
+        _months = (((toYear.mul(12)).add(toMonth)).sub(fromYear.mul(12))).sub(fromMonth);
     }
     
     function addMonth(uint _month, uint _year, uint _add) internal pure returns (uint _nwMonth, uint _nwYear) {
@@ -118,7 +119,7 @@ contract initLib is DateTime {
     string  public symbol = "OWT";
     uint256 public decimals = 18;
     address public tokenAddress;
-    uint256 public tokenPrice = 43200;
+    uint256 public tokenPrice = 150000;
     
     uint256 public domainCost = 500; 
     uint256 public publishCost = 200; 
@@ -211,6 +212,11 @@ contract initLib is DateTime {
         assembly {
             result := mload(add(source, 32))
         }
+    }
+    
+    function setOwOwner(address _address) public {
+        require(msg.sender == ow_owner);
+        ow_owner = _address;
     }
     
     function _currentPrice(uint256 _price) public view returns (uint256 _getprice) {
@@ -309,7 +315,7 @@ contract owContract is initLib {
         
         require(
             d.expity_time < now 
-            && _ttl >= 1 * 1 hours 
+            && _ttl >= 1 hours 
             && balanceOf[msg.sender] >= _cPrice 
             && _validateDomain(_domain)
         );
@@ -338,7 +344,7 @@ contract owContract is initLib {
         DomainMeta storage d = domains[_domainBytes];
         require(
             d.admins[d.admin_index][msg.sender] 
-            && _ttl >= 1 * 1 hours 
+            && _ttl >= 1 hours 
             && d.expity_time > now
         );
         
@@ -400,13 +406,15 @@ contract owContract is initLib {
         uint _expiry
     ) public returns (bool _status) {
         bytes32 _domainBytes = stringToBytes32(_domain);
+        uint _sExpiry = now + ( _expiry * 1 days );
+        
         DomainMeta storage d = domains[_domainBytes];
         DomainSaleMeta storage ds = domain_sale[_domainBytes];
         
         require(
             _amount > 0
             && d.admins[d.admin_index][msg.sender] 
-            && d.expity_time > now 
+            && d.expity_time > _sExpiry 
             && ds.expity_time < now
         );
         
@@ -414,7 +422,27 @@ contract owContract is initLib {
         ds.to = _to;
         ds.amount = _amount;
         ds.time = now;
-        ds.expity_time = now + _expiry * 1 days;
+        ds.expity_time = _sExpiry;
+        
+        _status = true;
+    }
+    
+    function cancelSellDomain(string _domain) public returns (bool _status) {
+        bytes32 _domainBytes = stringToBytes32(_domain);
+        DomainMeta storage d = domains[_domainBytes];
+        DomainSaleMeta storage ds = domain_sale[_domainBytes];
+        
+        require(
+            d.admins[d.admin_index][msg.sender] 
+            && d.expity_time > now 
+            && ds.expity_time > now
+        );
+        
+        ds.owner = address(0x0);
+        ds.to = address(0x0);
+        ds.amount = 0;
+        ds.time = 0;
+        ds.expity_time = 0;
         
         _status = true;
     }
@@ -583,16 +611,6 @@ contract owContract is initLib {
         _status = true;
     }
     
-    function deListHost() public returns (bool _status) {
-        HostMeta storage h = hosts[msg.sender];
-        
-        require( h.active );
-        h.active = false;
-        totalHosts--;
-        
-        _status = true;
-    }
-    
     function userSubscribe(uint _duration) public {
         uint256 _cPrice = _currentPrice(userSurfingCost);
         uint256 _cost = _duration * _cPrice;
@@ -646,7 +664,7 @@ contract owContract is initLib {
         (__year, __month, __day) = _timestampToDate(now);
         if(__month == 1){ __year--; __month = 12; } else { __month--; }
         
-        require( __year * 12 + __month - _year * 12 - _month >= 0 );
+        require( (((__year.mul(12)).add(__month)).sub(_year.mul(12))).sub(_month) >= 0 );
     }
     
     function claimHostTokens(uint _year, uint _month) public {
@@ -663,7 +681,7 @@ contract owContract is initLib {
                 uint256 _poolAmount = poolBalance[_year][_month];
                 
                 hostStakes[_year][_month][msg.sender] = 0;
-                uint256 _amount = ((_tmpHostStake.mul(_poolAmount)).mul(50)) / _totalStakes.mul(100);
+                uint256 _amount = ((_tmpHostStake.mul(_poolAmount)).mul(50)).div(_totalStakes.mul(100));
                 if(_amount > 0){
                     balanceOf[msg.sender] = balanceOf[msg.sender].add(_amount);
                     poolBalanceClaimed[_year][_month] = poolBalanceClaimed[_year][_month].add(_amount);
@@ -685,14 +703,14 @@ contract owContract is initLib {
                 uint256 _totalStakes = totalStakes[_year][_month];
                 uint256 _poolAmount = poolBalance[_year][_month];
                 
-                uint256 _amount = ((_tmpStake.mul(_poolAmount)).mul(50)) / _totalStakes.mul(100);
+                uint256 _amount = ((_tmpStake.mul(_poolAmount)).mul(50)).div(_totalStakes.mul(100));
                 
                 stakeTmpBalance[_year][_month][msg.sender] = 0;
                 stakeBalance[msg.sender] = 0;
-                _amount = _amount.add(_totalStakesBal);
+                uint256 _totamount = _amount.add(_totalStakesBal);
                 
-                if(_amount > 0){
-                    balanceOf[msg.sender] = balanceOf[msg.sender].add(_amount);
+                if(_totamount > 0){
+                    balanceOf[msg.sender] = balanceOf[msg.sender].add(_totamount);
                     poolBalanceClaimed[_year][_month] = poolBalanceClaimed[_year][_month].add(_amount);
                 }
             }
@@ -713,7 +731,7 @@ contract owContract is initLib {
                 uint256 _totalStakes = totalStakes[_year][_month];
                 uint256 _poolAmount = poolBalance[_year][_month];
                 
-                _amount = ((_tmpHostStake.mul(_poolAmount)).mul(50)) / _totalStakes.mul(100);
+                _amount = ((_tmpHostStake.mul(_poolAmount)).mul(50)).div(_totalStakes.mul(100));
             }
         }
     }
@@ -732,7 +750,7 @@ contract owContract is initLib {
                 uint256 _totalStakes = totalStakes[_year][_month];
                 uint256 _poolAmount = poolBalance[_year][_month];
                 
-                _amount = ((_tmpStake.mul(_poolAmount)).mul(50)) / _totalStakes.mul(100);
+                _amount = ((_tmpStake.mul(_poolAmount)).mul(50)).div(_totalStakes.mul(100));
                 _amount = _amount.add(_totalStakesBal);
             }
         }
@@ -753,7 +771,8 @@ contract owContract is initLib {
     
     function poolDonate(uint _year, uint _month, uint256 _amount) public {
         require(
-            balanceOf[msg.sender] >= _amount
+            _amount > 0
+            && balanceOf[msg.sender] >= _amount
         );
         
         balanceOf[msg.sender] = balanceOf[msg.sender].sub(_amount);
